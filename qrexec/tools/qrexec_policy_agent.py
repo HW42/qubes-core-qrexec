@@ -57,12 +57,17 @@ class VMListModeler:
         self._theme = Gtk.IconTheme.get_default()
         self._create_entries()
 
+    def _get_find_icon(self):
+        if not hasattr(self, "_find_icon"):
+            self._find_icon = self._theme.load_icon("edit-find", self._icon_size, 0)
+        return self._find_icon
+
     def _get_icon(self, name):
         if name not in self._icons:
             try:
                 icon = self._theme.load_icon(name, self._icon_size, 0)
             except GLib.Error:  # pylint: disable=catching-non-exception
-                icon = self._theme.load_icon("edit-find", self._icon_size, 0)
+                icon = self._get_find_icon()
 
             self._icons[name] = icon
 
@@ -128,8 +133,8 @@ class VMListModeler:
                 )
         else:
             if entry_box:
-                entry_box.set_icon_from_stock(
-                    Gtk.EntryIconPosition.PRIMARY, "gtk-find"
+                entry_box.set_icon_from_pixbuf(
+                    Gtk.EntryIconPosition.PRIMARY, self._get_find_icon()
                 )
 
         if selection_trigger:
