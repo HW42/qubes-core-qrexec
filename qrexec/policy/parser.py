@@ -273,11 +273,6 @@ class VMToken(str, metaclass=VMTokenMeta):
                 "invalid empty {} token".format(cls.__name__.lower()),
             )
 
-        # first, adjust some aliases
-        if token in {"dom0", "uuid:00000000-0000-0000-0000-000000000000"}:
-            # TODO: log a warning in Qubes 4.3
-            token = "@adminvm"
-
         # if user specified just qube name or UUID, use it directly
         if not (token.startswith("@") or token == "*"):
             return super().__new__(cls, token)
@@ -351,9 +346,9 @@ class VMToken(str, metaclass=VMTokenMeta):
         source: Optional["VMToken"] = None,
     ) -> bool:
         """Check if this token matches opposite token"""
-        # pylint: disable=unused-argument,too-many-return-statements
-        if self == "@adminvm":
-            return other == "@adminvm"
+        if isinstance(other, AdminVM):
+            # see note in AdminVM.match
+            return other.match(self, system_info=system_info, source=source)
         return match_strings(system_info["domains"], self, other)
 
     def is_special_value(self) -> bool:
@@ -486,6 +481,22 @@ class AdminVM(Source, Target, Redirect, IntendedTarget):
     def verify(self, *, system_info: FullSystemInfo) -> "AdminVM":
         return self
 
+    # To match dom0 and @adminvm in both commutatively we call this in
+    # VMToken.match with swapped arguments. If you are making changes here
+    # remember to adapt that code path too, if necessary.
+    def match(
+        self,
+        other: Optional[str],
+        *,
+        system_info: FullSystemInfo,
+        source: Optional[VMToken] = None,
+    ) -> bool:
+        return other in (
+            self,
+            "dom0",
+            "uuid:00000000-0000-0000-0000-000000000000",
+        )
+
 
 class AnyVM(Source, Target):
     # pylint: disable=missing-docstring,unused-argument
@@ -498,7 +509,11 @@ class AnyVM(Source, Target):
         system_info: FullSystemInfo,
         source: Optional[VMToken] = None,
     ) -> bool:
-        return other != "@adminvm"
+        return other not in (
+            "@adminvm",
+            "dom0",
+            "uuid:00000000-0000-0000-0000-000000000000",
+        )
 
     def expand(self, *, system_info: FullSystemInfo) -> Iterable[VMToken]:
         for name, domain in system_info["domains"].items():
@@ -776,7 +791,7 @@ class AllowResolution(AbstractResolution):
                 [
                     f"user={self.user or 'DEFAULT'}",
                     "result=allow",
-                    "target=@adminvm",
+                    "target=dom0",
                     f"autostart={self.autostart}",
                     f"requested_target={request.target}",
                 ]
@@ -1262,7 +1277,10 @@ class Ask(ActionType):
 
         targets_for_ask: Iterable[str]
         if self.target is not None:
-            targets_for_ask = [self.target]
+            if isinstance(self.target, AdminVM):
+                targets_for_ask = ["dom0"]
+            else:
+                targets_for_ask = [self.target]
         else:
             targets_for_ask = list(
                 self.rule.policy.collect_targets_for_ask(request)
